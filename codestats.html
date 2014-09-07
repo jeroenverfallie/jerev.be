@@ -4,51 +4,507 @@
 <head>
     <title>Test</title>
     <link rel="stylesheet" type="text/css" href="bower_components/c3/c3.css">
+
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
+
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap-theme.min.css">
+
+    <style>
+        .axis path,
+        .axis line {
+            fill: none;
+            stroke: #eee;
+            shape-rendering: crispEdges;
+        }
+         
+        .axis text {
+            font-family: sans-serif;
+            font-size: 13px;
+        }
+         
+        .loading {
+            font-family: sans-serif;
+            font-size: 15px;
+        }
+         
+        .circle {
+            fill: #222;
+        }
+    </style>
 </head>
 
 <body>
-    <div id="chart"></div>
+    <div class="container">
+        <div class="row">
+            <h3>I pushed my last commit</h3>
+            <h2 id="github-last">
+                <span></span>
+                <iframe id="github-star" src="" allowtransparency="true" frameborder="0" scrolling="0" width="170" height="30"></iframe>
+            </h2>
+
+        </div>
+        <div class="row">
+            <h2>Total time spent coding this week</h2>
+            <div id="chart-code"></div>
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <h2>Language breakdown today</h2>
+                <div id="chart-languages-today"></div>
+            </div>
+            <div class="col-md-6">
+                <h2>Language breakdown this week</h2>
+                <div id="chart-languages-week"></div>
+            </div>
+        </div>
+        <div class="row">
+            <h2>Time spent coding stacked based on language</h2>
+            <div id="chart-code-stacked"></div>
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <h2>Bandwidth usage this week</h2>
+                <div id="chart-bandwidth"></div>
+            </div>
+            <div class="col-md-6">
+                <h2>Keypresses and mouseclicks this week</h2>
+                <div id="chart-keypresses"></div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <h2>Aggregate daily tweets</h2>
+                <div id="chart-tweets-daily"></div>
+            </div>
+            <div class="col-md-6">
+                <h2>Aggregate hourly tweets</h2>
+                <div id="chart-tweets-hourly"></div>
+            </div>
+            <div class="col-md-12">
+                <h2>Tweet punchcard</h2>
+                <div id="chart-tweets-punchcard"></div>
+            </div>
+        </div>
+    </div>
 
     <script src="bower_components/d3/d3.min.js" charset="utf-8"></script>
     <script src="bower_components/c3/c3.min.js"></script>
+    <script src="bower_components/lazy.js/lazy.js"></script>
+    <script src="bower_components/zepto/zepto.min.js"></script>
 
     <script>
-    d3.json("http://site-stuff.175-east-75th-street.boweryapps.com/getcodestats.php", function(json) {
-        var columns = [], x = ['x'];
+    d3.json("http://site-stuff.175-east-75th-street.boweryapps.com/getstats.php", function(json) {
+        codestats(json.result.codestats);
+        codestatsStacked(json.result.codestats);
+        keypresses(json.result.keypresses, json.result.mouseclicks);
+        bandwidth(json.result.bandwidth);
+        languagesToday(json.result.codestats.days[0].languages);
+        languagesThisWeek(json.result.codestats.days);
+    });
+
+    d3.json("http://site-stuff.175-east-75th-street.boweryapps.com/getextrastats.php", function(json) {
+        tweetsDaily(json.twitter.daily);
+        tweetsHourly(json.twitter.hourly);
+        tweetsPunchcard(json.twitter.punchcard);
+    });
+
+    d3.json("https://api.github.com/users/jeroenverfallie/events", function(json) {
+        var lastPush = Lazy(json).findWhere({
+            'type': 'PushEvent'
+        });
+        var lastTime = formatSeconds((new Date() - new Date(lastPush.created_at)) / 1000, true);
+        var repo = lastPush.repo.name.split('/');
+        var user = repo[0];
+        repo = repo[1];
+
+
+        $('#github-last span').html(lastTime + " ago to " + lastPush.repo.name + ' ');
+        $('#github-star').attr('src', 'http://ghbtns.com/github-btn.html?user=' + user + '&repo=' + repo + '&type=watch&count=true');
+
+        //
+    });
+
+    function formatSeconds(s, full) {
+        var h = ~~ (s / (60 * 60)),
+        m = ~~ ((s % 3600) / 60),
+        sec = s % 60;
+
+        if (full) {
+            return s > 60 ? h + ' hours, ' + m + ' minutes' : sec + ' seconds';
+        } else {
+            return s > 60 ? h + 'h ' + m + 'm ' : sec + 'sec';
+        }
+
+    }
+
+
+    function tweetsPunchcard(data) {
+        var w = 1120,
+            h = 300,
+            pad = 20,
+            left_pad = 100;
+
+        var svg = d3.select("#chart-tweets-punchcard")
+            .append("svg")
+            .attr("width", w)
+            .attr("height", h);
+
+        var x = d3.scale.linear().domain([0, 23]).range([left_pad, w - pad]),
+            y = d3.scale.linear().domain([0, 6]).range([pad, h - pad * 2]);
+
+        var xAxis = d3.svg.axis().scale(x).orient("bottom")
+            .ticks(24)
+            .tickFormat(function(d, i) {
+                var m = (d > 12) ? "p" : "a";
+                return (d % 12 == 0) ? 12 + m : d % 12 + m;
+            }),
+            yAxis = d3.svg.axis().scale(y).orient("left")
+            .ticks(7)
+            .tickFormat(function(d, i) {
+                return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d];
+            });
+
+        svg.append("g")
+            .attr("class", "axis")
+            .attr("transform", "translate(0, " + (h - pad) + ")")
+            .call(xAxis);
+
+        svg.append("g")
+            .attr("class", "axis")
+            .attr("transform", "translate(" + (left_pad - pad) + ", 0)")
+            .call(yAxis);
+
+        svg.append("text")
+            .attr("class", "loading")
+            .text("Loading ...")
+            .attr("x", function() {
+                return w / 2;
+            })
+            .attr("y", function() {
+                return h / 2 - 5;
+            });
+
+        var max_r = d3.max(data.map(
+                function(d) {
+                    return d[2];
+                })),
+            r = d3.scale.linear()
+            .domain([0, d3.max(data, function(d) {
+                return d[2];
+            })])
+            .range([0, 12]);
+
+        svg.selectAll(".loading").remove();
+
+        svg.selectAll("circle")
+            .data(data)
+            .enter()
+            .append("circle")
+            .attr("class", "circle")
+            .attr("cx", function(d) {
+                return x(d[1]);
+            })
+            .attr("cy", function(d) {
+                return y(d[0]);
+            })
+            .transition()
+            .duration(800)
+            .attr("r", function(d) {
+                return r(d[2]);
+            });
+    }
+
+
+    function tweetsDaily(data) {
+        var columns = [
+            ['x'],
+            ['tweets']
+        ];
+
+        for (var i = 0, n = data.length; i < n; i++) {
+            var hour = data[i];
+
+            columns[0].push(hour.tag);
+            columns[1].push(+hour.val);
+        }
+        var chart = c3.generate({
+            bindto: '#chart-tweets-daily',
+            data: {
+                x: 'x',
+                columns: columns,
+                type: 'bar'
+            },
+            axis: {
+                x: {
+                    type: 'category'
+                }
+            },
+            legend: {
+                show: false
+            }
+        });
+    }
+
+    function tweetsHourly(data) {
+        var columns = [
+            ['x'],
+            ['tweets']
+        ];
+
+        for (var i = 0, n = data.length; i < n; i++) {
+            var hour = data[i];
+
+            columns[0].push(hour.tag);
+            columns[1].push(+hour.val);
+        }
+        var chart = c3.generate({
+            bindto: '#chart-tweets-hourly',
+            data: {
+                x: 'x',
+                columns: columns,
+                type: 'bar'
+            },
+            axis: {
+                x: {
+                    type: 'category',
+                    tick: {
+                        count: 4
+                    }
+                }
+            },
+            legend: {
+                show: false
+            }
+        });
+    }
+
+
+    function keypresses(keypresses, mouseclicks) {
+        var columns = [
+            ['x'],
+            ['keypresses'],
+            ['mouseclicks']
+        ];
+
+        for (var i = 0, n = keypresses.length; i < n; i++) {
+            var keypress = keypresses[i],
+                mouseclick = mouseclicks[i];
+
+            columns[0].push(keypress.day);
+            columns[1].push(keypress.count);
+            columns[2].push(mouseclick.count);
+        }
+
+        var chart = c3.generate({
+            bindto: '#chart-keypresses',
+            data: {
+                x: 'x',
+                columns: columns,
+                type: 'bar'
+            },
+            axis: {
+                x: {
+                    type: 'timeseries',
+                    tick: {
+                        format: '%a %d %b'
+                    }
+                },
+                y: {
+                    tick: {
+                        format: d3.format(",")
+                    }
+                }
+            }
+        });
+    }
+
+    function bandwidth(data) {
+        var columns = [
+            ['x'],
+            ['download'],
+            ['upload']
+        ];
+
+        for (var i = 0, n = data.length; i < n; i++) {
+            var band = data[i];
+
+            columns[0].push(band.day);
+            columns[1].push(band.download);
+            columns[2].push(band.upload);
+        }
+
+        var chart = c3.generate({
+            bindto: '#chart-bandwidth',
+            data: {
+                x: 'x',
+                columns: columns,
+                type: 'bar'
+            },
+            axis: {
+                x: {
+                    type: 'timeseries',
+                    tick: {
+                        format: '%a %d %b'
+                    }
+                },
+                y: {
+                    tick: {
+                        format: function(bytes) {
+                            var fmt = d3.format('.1f');
+                            if (bytes < 1024) {
+                                return fmt(bytes) + 'B';
+                            } else if (bytes < 1024 * 1024) {
+                                return fmt(bytes / 1024) + 'kB';
+                            } else if (bytes < 1024 * 1024 * 1024) {
+                                return fmt(bytes / 1024 / 1024) + 'MB';
+                            } else {
+                                return fmt(bytes / 1024 / 1024 / 1024) + 'GB';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+
+    function codestats(data) {
+        var data = data.days;
+        var columns = [
+            ['x'],
+            ['coding time']
+        ];
+
+        for (var i = 0, n = data.length; i < n; i++) {
+            var day = data[i];
+
+            columns[0].push(day.start * 1000);
+            columns[1].push(day.total_seconds);
+        }
+
+        var chart = c3.generate({
+            bindto: '#chart-code',
+            data: {
+                x: 'x',
+                columns: columns,
+                type: 'area-spline'
+            },
+            axis: {
+                x: {
+                    type: 'timeseries',
+                    tick: {
+                        format: '%a %d %b'
+                    }
+                },
+                y: {
+                    tick: {
+                        format: function(s) {
+                            var h = ~~ (s / (60 * 60)),
+                                m = ~~ ((s % 3600) / 60);
+                            return h + 'h ' + m + 'm ';
+                        }
+                    }
+                }
+            },
+            legend: {
+                show: false
+            }
+        });
+    }
+
+    function languagesToday(data) {
+        var columns = [];
+
+        for (var i = 0, n = data.length; i < n; i++) {
+            var lang = data[i];
+
+            columns.push([lang.name, lang.percent]);
+        }
+
+        var chart = c3.generate({
+            bindto: '#chart-languages-today',
+            data: {
+                columns: columns,
+                type: 'donut'
+            },
+            legend: {
+                show: false
+            }
+        });
+    }
+
+    function languagesThisWeek(data) {
+        var columns = [];
+        var ref = {};
+
+        for (var i = 0, n = data.length; i < n; i++) {
+            var languages = data[i].languages;
+            for (var j = 0, o = languages.length; j < o; j++) {
+                var lang = languages[j];
+                var l = [lang.name, lang.percent];
+
+                if (ref[lang.name]) {
+                    ref[lang.name][1] += lang.percent;
+                } else {
+                    columns.push(l);
+                    ref[lang.name] = [lang.name, lang.percent];
+                }
+            }
+        }
+
+        var chart = c3.generate({
+            bindto: '#chart-languages-week',
+            data: {
+                columns: columns,
+                type: 'donut'
+            },
+            legend: {
+                show: false
+            }
+        });
+    }
+
+
+    function codestatsStacked(json) {
+        var columns = [],
+            x = ['x'];
 
         var languages = [];
 
-        for(var i = 0, n = json.all_languages.length; i < n; i++) {
+        for (var i = 0, n = json.all_languages.length; i < n; i++) {
             var name = json.all_languages[i];
-            columns[i+1] = Array.apply(null, new Array(json.days.length+1)).map(Number.prototype.valueOf,0);
-            columns[i+1][0] = name;
+            columns[i + 1] = Array.apply(null, new Array(json.days.length + 1)).map(Number.prototype.valueOf, 0);
+            columns[i + 1][0] = name;
             languages[name] = i;
         }
 
         var dates = (function() {
             var out = {};
-            for(var i = 0, n = json.days.length; i < n; i++) {
+            for (var i = 0, n = json.days.length; i < n; i++) {
                 out[json.days[i].start_date] = i;
             }
             return out;
         })();
 
-        for(var i = 0, n = json.days.length; i < n; i++) {
-            var day = json.days[i], sec = day.total_seconds;
-            x.push(day.start*1000);
+        for (var i = 0, n = json.days.length; i < n; i++) {
+            var day = json.days[i],
+                sec = day.total_seconds;
+            x.push(day.start * 1000);
 
-            for(var j = 0, o = day.languages.length; j < o; j++) {
+            for (var j = 0, o = day.languages.length; j < o; j++) {
                 var l = day.languages[j];
 
-                columns[languages[l.name]+1][dates[day.start_date]+1] = l.percent/100*sec;
+                columns[languages[l.name] + 1][dates[day.start_date] + 1] = l.percent / 100 * sec;
             }
         }
         columns[0] = x;
 
-    
-        var formatTime = d3.time.format("%Mm %Ss");
+
 
         var chart = c3.generate({
+            bindto: '#chart-code-stacked',
             data: {
                 x: 'x',
                 columns: columns,
@@ -65,16 +521,15 @@
                 y: {
                     tick: {
                         format: function(s) {
-                            var h = ~~(s/(60*60)),
-                                m = ~~((s%3600)/60),
-                                s = ~~(s%60);
-                            return h + ':' + m + ':' + s;
+                            var h = ~~ (s / (60 * 60)),
+                                m = ~~ ((s % 3600) / 60);
+                            return h + 'h ' + m + 'm ';
                         }
                     }
                 }
             }
         });
-    });
+    }
     </script>
 </body>
 
